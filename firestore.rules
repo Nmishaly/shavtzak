@@ -6,7 +6,7 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function isOwner() {
       return signedIn() && request.auth.token.email_verified == true
-        && request.auth.token.email.lower() == 'OWNER_EMAIL_HERE';
+        && request.auth.token.email.lower() == 'netzer7@gmail.com';
     }
     function myRole() {
       let p = /databases/$(database)/documents/access/$(request.auth.uid);
