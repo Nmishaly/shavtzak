@@ -11,6 +11,16 @@ import { firebaseConfig, OWNER_EMAIL } from './firebase-config.js';
 const ROLE_NAMES = { pending: 'ממתין לאישור', viewer: 'צפייה בלבד', editor: 'עריכה', denied: 'נדחה', owner: 'מנהל' };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const $ = s => document.querySelector(s);
+const ERRORS = {
+  'auth/network-request-failed': 'אין חיבור לאינטרנט',
+  'auth/too-many-requests': 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות',
+  'auth/user-disabled': 'החשבון חסום',
+  'auth/unauthorized-domain': 'הכתובת של האתר לא מאושרת להתחברות ב-Firebase',
+  'auth/internal-error': 'שגיאה פנימית בהתחברות',
+  'permission-denied': 'אין הרשאה',
+  'unavailable': 'אין חיבור לשרת',
+};
+const errMsg = e => (e && ERRORS[e.code]) || 'שגיאה לא צפויה' + (e && e.code ? ` (${e.code})` : '');
 
 // ---------- overlay ----------
 const gate = document.createElement('div');
@@ -27,6 +37,7 @@ if (String(firebaseConfig.apiKey).includes('REPLACE_ME') || OWNER_EMAIL.includes
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+auth.languageCode = 'he'; // Google sign-in screens in Hebrew
 const fs = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
@@ -64,7 +75,8 @@ const userApi = {
 const downloadsApi = {
   save: async ({ filename, data }) => {
     const type = filename.endsWith('.csv') ? 'text/csv;charset=utf-8' : filename.endsWith('.json') ? 'application/json' : 'text/html;charset=utf-8';
-    const blob = new Blob([filename.endsWith('.csv') ? '﻿' + data : data], { type });
+    const bom = filename.endsWith('.csv') && !String(data).startsWith('\ufeff') ? '\ufeff' : ''; // Excel needs a BOM to read Hebrew
+    const blob = new Blob([bom + data], { type });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   },
@@ -82,7 +94,7 @@ async function signIn() {
   try { await signInWithPopup(auth, provider); }
   catch (e) {
     if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')) return signInWithRedirect(auth, provider);
-    if (e && e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') gtoast('ההתחברות נכשלה: ' + (e.code || e.message));
+    if (e && e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') gtoast('ההתחברות נכשלה: ' + errMsg(e));
   }
 }
 getRedirectResult(auth).catch(() => {});
@@ -109,13 +121,13 @@ onAuthStateChanged(auth, async user => {
     if (!snap.exists()) {
       // First visit: the single "request access" click both signs in and files the request.
       try { await setDoc(ref, { email: user.email, name: user.displayName || '', role: 'pending', requestedAt: serverTimestamp() }); }
-      catch (e) { screen(`<p>שליחת הבקשה נכשלה (${esc(e.code || e.message)}).</p><button class="gbtn" data-g="out">יציאה</button>`); }
+      catch (e) { screen(`<p>שליחת הבקשה נכשלה: ${esc(errMsg(e))}.</p><button class="gbtn" data-g="out">יציאה</button>`); }
       return;
     }
-    const who = `<p class="gmuted">מחובר/ת כ-${esc(user.email)}</p>`;
+    const who = `<p class="gmuted">מחובר/ת כ-<bdi>${esc(user.email)}</bdi></p>`;
     if (r === 'pending') screen(`<p><b>הבקשה נשלחה.</b> ברגע שמנהל הכלי יאשר, הלוח ייפתח כאן אוטומטית — אין צורך לרענן.</p>${who}<button class="gbtn" data-g="out">התחברות בחשבון אחר</button>`);
     else screen(`<p>הבקשה לא אושרה. אם זו טעות, פנו למנהל הכלי.</p>${who}<button class="gbtn" data-g="out">התחברות בחשבון אחר</button>`);
-  }, e => screen(`<p>לא ניתן לבדוק הרשאה (${esc(e.code || e.message)}).</p><button class="gbtn" data-g="out">יציאה</button>`));
+  }, e => screen(`<p>לא ניתן לבדוק הרשאה: ${esc(errMsg(e))}.</p><button class="gbtn" data-g="out">יציאה</button>`));
 });
 
 // ---------- account chip + admin panel ----------
@@ -123,7 +135,7 @@ let unsubReq = null, requests = [];
 function renderAcct() {
   const el = $('#acct'); if (!el || !me) return;
   const pend = requests.filter(r => r.role === 'pending').length;
-  el.innerHTML = `<span class="acct-who" title="${esc(me.email)}">${esc(me.displayName || me.email)} · ${ROLE_NAMES[role] || ''}</span>
+  el.innerHTML = `<span class="acct-who" title="${esc(me.email)}"><bdi>${esc(me.displayName || me.email)}</bdi> · ${ROLE_NAMES[role] || ''}</span>
     ${role === 'owner' ? `<button class="btn sm" data-g="admin">הרשאות${pend ? ` <span class="gbadge">${pend}</span>` : ''}</button>` : ''}
     <button class="btn sm" data-g="out">יציאה</button>`;
   if (role === 'owner' && !unsubReq) {
@@ -166,13 +178,13 @@ document.addEventListener('click', async e => {
   if (g === 'closeAdmin') { const m = $('#admin'); if (m) m.remove(); return; }
   if (g === 'copyLink') { const url = location.origin + location.pathname; try { await navigator.clipboard.writeText(url); gtoast('הקישור הועתק'); } catch (er) { prompt('הקישור לשיתוף:', url); } return; }
   if (g === 'export') return exportAll();
-  if (t.dataset.role) { try { await setDoc(doc(fs, 'access', t.dataset.uid), { role: t.dataset.role, decidedAt: serverTimestamp() }, { merge: true }); gtoast('עודכן'); } catch (er) { gtoast('העדכון נכשל: ' + (er.code || er.message)); } return; }
+  if (t.dataset.role) { try { await setDoc(doc(fs, 'access', t.dataset.uid), { role: t.dataset.role, decidedAt: serverTimestamp() }, { merge: true }); gtoast('עודכן'); } catch (er) { gtoast('העדכון נכשל: ' + errMsg(er)); } return; }
   if (t.dataset.delreq) { if (!confirm('למחוק את הרשומה? המשתמש יאבד גישה ויוכל לבקש שוב.')) return; try { await deleteDoc(doc(fs, 'access', t.dataset.delreq)); } catch (er) { gtoast('המחיקה נכשלה'); } }
 });
 document.addEventListener('change', async e => {
   if (e.target.id !== 'importFile' || !e.target.files[0]) return;
   try { await importAll(JSON.parse(await e.target.files[0].text())); }
-  catch (er) { gtoast('הייבוא נכשל: ' + (er.code || er.message)); }
+  catch (er) { gtoast('הייבוא נכשל: ' + (er.code ? errMsg(er) : er.message)); }
   e.target.value = '';
 });
 

@@ -18,7 +18,7 @@
   --sb: #1F4E8C; --sb-bg: #E1EAF6; --cv: #4B3A8F; --cv-bg: #E9E5F7; --kt: #8A4A12; --kt-bg: #F8E9DA; --hm: #6E2E6A; --hm-bg: #F3E3F1; --rc: #4F5A4A; --rc-bg: #E6E9E2; --ev: #0F6B6B; --ev-bg: #DDF0EE;
   --f-display: 'Secular One', 'IBM Plex Sans Hebrew', system-ui, sans-serif;
   --f-body: 'IBM Plex Sans Hebrew', 'Segoe UI', Arial, sans-serif;
-  --f-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --f-mono: 'IBM Plex Mono', 'IBM Plex Sans Hebrew', ui-monospace, Menlo, monospace;
   --r: 8px;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -853,6 +853,8 @@ const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמיש
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const h2t = h => clock(h);
+// Time range isolated as LTR so it never flips inside Hebrew text (08:00–10:00, not 10:00–08:00).
+const trange = (a, b, sep = '–') => '\u2066' + h2t(a) + sep + h2t(b) + '\u2069';
 const t2h = s => { if (!s) return 0; const [a, b] = s.split(':').map(Number); return a + (b || 0) / 60; };
 const ddmm = s => s.slice(8, 10) + '.' + s.slice(5, 7);
 
@@ -1005,8 +1007,9 @@ function renderTop() {
     $('#range').textContent = `${ddmm(a)} ${h2t(P.P0)} – ${ddmm(b)} ${h2t(P.P1)}`; $('#range').title = `${DAY_NAMES[weekdayOf(a)]} עד ${DAY_NAMES[weekdayOf(b)]}`; }
   const st = $('#status'); const v = analysis();
   if (!v) { st.className = 'status'; st.textContent = ''; return; }
-  if (v.errors) { st.className = 'status err'; st.textContent = `${v.errors} חריגות${v.warnings ? ` · ${v.warnings} הערות` : ''}`; }
-  else if (v.warnings) { st.className = 'status warn'; st.textContent = `ללא חריגות · ${v.warnings} הערות`; }
+  const nErr = n => n === 1 ? 'חריגה אחת' : `${n} חריגות`, nWarn = n => n === 1 ? 'הערה אחת' : `${n} הערות`;
+  if (v.errors) { st.className = 'status err'; st.textContent = `${nErr(v.errors)}${v.warnings ? ` · ${nWarn(v.warnings)}` : ''}`; }
+  else if (v.warnings) { st.className = 'status warn'; st.textContent = `ללא חריגות · ${nWarn(v.warnings)}`; }
   else { st.className = 'status ok'; st.textContent = 'כל הכללים מתקיימים'; }
 }
 function renderSync() {
@@ -1035,7 +1038,7 @@ function renderBoard() {
   html += `<div class="row" style="justify-content:space-between">
     <div class="row">${S.canWrite && S.week ? confirmBtn('regen', 'שבץ מחדש', 'לשבץ מחדש את כל המשבצות שלא נעולות?') : ''}
     ${S.canWrite && S.week && Object.values(S.week.locks || {}).some(Boolean) ? confirmBtn('unlockAll', 'שחרר את כל הנעילות', 'לשחרר את כל הנעילות בשבוע?') : ''}</div>
-    <div class="row">${varietyBadge(doc)}<button class="btn" data-act="copyDay">העתק את היום כטקסט</button>${S.downloads ? `<button class="btn" data-act="snapshot">קובץ לשליחה (לקריאה בלבד)</button>` : ''}${S.downloads ? `<button class="btn" data-act="csv">ייצוא שבוע לאקסל</button>` : ''}</div></div>`;
+    <div class="row">${varietyBadge(doc)}<button class="btn primary" data-act="pdf">ייצוא PDF</button><button class="btn" data-act="copyDay">העתק את היום כטקסט</button>${S.downloads ? `<button class="btn" data-act="snapshot">קובץ לשליחה (לקריאה בלבד)</button>` : ''}${S.downloads ? `<button class="btn" data-act="csv">ייצוא שבוע לאקסל</button>` : ''}</div></div>`;
 
   const PP = period(cfg);
   html += `<div class="days" role="tablist" style="grid-template-columns:repeat(${PP.days.length},minmax(0,1fr))">${PP.days.map(i => {
@@ -1107,7 +1110,7 @@ function dayAbsentCard(d) {
   for (const p of S.cfg.people) for (const x of absIntervals(S.cfg, p, S.ws)) if (x.s < b && x.e > a) { if (x.a.kind === 'platoon') plAway[p.pl] = x; else list.push({ p, x }); }
   const plCards = Object.entries(plAway).map(([plId, x]) => `<div class="duty out"><div class="lbl"><b>${esc(pl(plId))} לא במוצב</b><span>${x.s > a ? 'מ-' + h2t(x.s) : x.e < b ? 'עד ' + h2t(x.e) : 'כל היום'}</span></div><div class="psub">החיילים שלה לא משובצים בזמן הזה</div></div>`).join('');
   if (!list.length) return plCards;
-  const note = x => x.s > a && x.e < b ? `${h2t(x.s)}–${h2t(x.e)}` : x.s > a ? `מ-${h2t(x.s)}` : x.e < b ? `עד ${h2t(x.e)}` : 'כל היום';
+  const note = x => x.s > a && x.e < b ? trange(x.s, x.e) : x.s > a ? `מ-${h2t(x.s)}` : x.e < b ? `עד ${h2t(x.e)}` : 'כל היום';
   return plCards + `<div class="duty out"><div class="lbl"><b>ביציאה</b><span>${list.length} לוחמים</span></div><div class="chips">${list.map(({ p, x }) => `<button class="chip" data-abs="${p.id}">${esc(p.name)} <span class="mono muted" style="font-size:.74rem">${note(x)}</span></button>`).join('')}</div></div>`;
 }
 function varietyBadge(doc) {
@@ -1269,7 +1272,7 @@ function openDialog(html) { $('#modal').innerHTML = `<div class="scrim" data-clo
 function closeDialog() { $('#modal').innerHTML = ''; }
 function cellLabel(cell) {
   const d = Math.floor((cell.s - S.cfg.rules.changeover) / 24);
-  return `${cell.kind === 'hamal' ? 'משמרת חמ"ל' : postName(S.cfg, cell.post)} · ${DAY_NAMES[weekdayOf(addDays(S.ws, d))]} ${h2t(cell.s)}–${h2t(cell.e)}`;
+  return `${cell.kind === 'hamal' ? 'משמרת חמ"ל' : postName(S.cfg, cell.post)} · ${DAY_NAMES[weekdayOf(addDays(S.ws, d))]} ${trange(cell.s, cell.e)}`;
 }
 function openCellDialog(key) {
   const v = analysis(); const doc = currentDoc();
@@ -1521,6 +1524,7 @@ function openEvMemberDialog(evId, i) {
 
 function extraClick(t, ds) {
   if (ds.wimode) { S.wiMode = ds.wimode; render(); return true; }
+  if (ds.pdfscope) { $('#modal').dataset.pdfscope = ds.pdfscope; document.querySelectorAll('[data-pdfscope]').forEach(b => b.setAttribute('aria-pressed', String(b === t))); return true; }
   if (ds.plsave) {
     const p = S.cfg.platoons.find(x => x.id === ds.plsave);
     const rd = pfx => { const d = $('#' + pfx + '-d').value, t = $('#' + pfx + '-t').value || '00:00'; return d ? d + 'T' + t : ''; };
@@ -1611,8 +1615,11 @@ function snapshotData() {
     const rows = [];
     for (let j = Math.floor((a - C) / L); C + j * L < b - 1e-9; j++) {
       const s = Math.max(C + j * L, a), e = Math.min(C + (j + 1) * L, b); if (e - s < 1e-9) continue;
-      rows.push({ time: `${h2t(s)}–${h2t(e)}`, night: mod(s, 24) >= 22 || mod(s, 24) < 6, cells: cfg.posts.map(p => { const cs = (byJ[j] || {})[p.id]; return cs ? cs.map(c => doc.cells[c.key] ? pname(doc.cells[c.key]) : 'חסר') : null; }) });
+      const hc = v.geo.hamal.find(h => h.s <= s + 1e-9 && h.e > s + 1e-9);
+      const ham = !hc ? null : { name: doc.cells[hc.key] ? pname(doc.cells[hc.key]) : 'חסר', time: `${h2t(hc.s)}–${h2t(hc.e)}`, first: !rows.length || !rows[rows.length - 1].ham || rows[rows.length - 1].ham.key !== hc.key, key: hc.key };
+      rows.push({ time: `${h2t(s)}–${h2t(e)}`, night: mod(s, 24) >= 22 || mod(s, 24) < 6, cells: cfg.posts.map(p => { const cs = (byJ[j] || {})[p.id]; return cs ? cs.map(c => doc.cells[c.key] ? pname(doc.cells[c.key]) : 'חסר') : null; }), ham });
     }
+    rows.forEach((r, i) => { if (r.ham && r.ham.first) { let n = 1; while (rows[i + n] && rows[i + n].ham && rows[i + n].ham.key === r.ham.key) n++; r.ham.span = n; } });
     const absent = [];
     for (const p of cfg.people) for (const x of absIntervals(cfg, p, S.ws)) if (x.s < b && x.e > a && x.a.kind !== 'platoon') absent.push(p.name);
     const plAway = cfg.platoons.filter(pl0 => { const m = cfg.people.find(p => p.pl === pl0.id); return m && absIntervals(cfg, m, S.ws).some(x => x.a.kind === 'platoon' && x.s <= a && x.e >= b); }).map(x => x.name);
@@ -1633,7 +1640,7 @@ function snapshotData() {
       items.push({ t: Math.max(x.s, P.P0), what: x.type === 'event' ? x.label : x.type === 'off' ? 'יציאה' : DUTY_NAMES[x.type], time: x.type === 'standby' ? `מ-${h2t(x.s)} ל-24 שעות` : `${h2t(x.s)}–${h2t(x.e)}` });
     }
     items.sort((a, b) => a.t - b.t);
-    return { name: p.name, items: items.map(it => { const d = Math.floor((it.t - C) / 24); const l = dayLabel(d); return { day: `${l.name} ${l.date}`, what: it.what, time: it.time }; }) };
+    return { name: p.name, pl: pl(p.pl), cmdr: !!p.cmdr, items: items.map(it => { const d = Math.floor((it.t - C) / 24); const l = dayLabel(d); return { day: `${l.name} ${l.date}`, what: it.what, time: it.time }; }) };
   });
   const first = dayLabel(P.d0), last = dayLabel(P.d1);
   return { range: `${first.name} ${first.date} ${h2t(P.P0)} – ${last.name} ${last.date} ${h2t(P.P1)}`, made: new Date().toLocaleString('he-IL'), posts: cfg.posts.map(p => p.name), days, people };
@@ -1661,7 +1668,7 @@ table.me{min-width:0}.me td{font-size:.95rem}.hl{background:#FFF1CF;color:#1B211
 <script>
 const D=${data};const $=s=>document.querySelector(s);const e=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let cur=0,me='';$('#rng').textContent=D.range+' · הופק '+D.made;
-D.people.map(p=>p.name).sort().forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;$('#me').appendChild(o)});
+D.people.map(p=>p.name).sort((a,b)=>a.localeCompare(b,'he')).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;$('#me').appendChild(o)});
 const mark=n=>me&&n===me?'<span class="hl">'+e(n)+'</span>':e(n);
 function draw(){$('#tabs').innerHTML=D.days.map((d,i)=>'<button class="'+(i===cur?'on':'')+'" data-i="'+i+'">'+d.name+' '+d.date+'</button>').join('');
 const d=D.days[cur];let h='<div class="cards">';
@@ -1674,12 +1681,126 @@ h+='<div class="card"><b>חמ"ל</b>'+d.hamal.map(x=>'<div><span class="t">'+x.t
 if(d.absent.length)h+='<div class="card"><b>ביציאה</b>'+d.absent.map(mark).join(', ')+'</div>';
 h+='</div><div class="x"><table><thead><tr><th>שעות</th>'+D.posts.map(p=>'<th>'+e(p)+'</th>').join('')+'</tr></thead><tbody>'+d.rows.map(r=>'<tr class="'+(r.night?'n':'')+'"><td class="t">'+r.time+'</td>'+r.cells.map(c=>'<td>'+(c?c.map(mark).join('<br>'):'<span class="mu">—</span>')+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
 $('#day').innerHTML=h;
-const p=D.people.find(x=>x.name===me);$('#mine').innerHTML=p?'<div class="x"><table class="me"><thead><tr><th>יום</th><th>שעות</th><th>משימה</th></tr></thead><tbody>'+(p.items.map(it=>'<tr><td>'+it.day+'</td><td class="t">'+it.time+'</td><td>'+e(it.what)+'</td></tr>').join('')||'<tr><td colspan="3">אין משימות</td></tr>')+'</tbody></table></div>':'';}
+const p=D.people.find(x=>x.name===me);$('#mine').innerHTML=p?'<div class="x"><table class="me"><thead><tr><th>יום</th><th>שעות</th><th>משימה</th></tr></thead><tbody>'+(p.items.map(it=>'<tr><td>'+it.day+'</td><td class="'+(/[\u0590-\u05FF]/.test(it.time)?'':'t')+'">'+it.time+'</td><td>'+e(it.what)+'</td></tr>').join('')||'<tr><td colspan="3">אין משימות</td></tr>')+'</tbody></table></div>':'';}
 $('#tabs').addEventListener('click',ev=>{const b=ev.target.closest('button');if(b){cur=+b.dataset.i;draw()}});
 $('#me').addEventListener('change',ev=>{me=ev.target.value;try{localStorage.setItem('me',me)}catch(x){}draw()});
 try{me=localStorage.getItem('me')||'';$('#me').value=me;if($('#me').value!==me)me=''}catch(x){}
 draw();
 <\/script></body></html>`;
+}
+
+// ----- PDF export: a print-only layout, saved through the browser's "Save as PDF" (real Hebrew text, vector quality) -----
+function openPdfDialog() {
+  const ds = addDays(S.ws, S.day);
+  openDialog(`<header><div><h3>ייצוא השיבוץ ל-PDF</h3><div class="muted" style="font-size:.85rem">קובץ מעוצב להדפסה, לתלייה בלוח ולשליחה בוואטסאפ</div></div><button class="btn sm" data-close>סגור</button></header>
+  <div class="body">
+    <div class="field"><span style="font-size:.82rem;font-weight:600">מה להכניס לקובץ</span>
+      <div class="seg-ctl" role="group"><button data-pdfscope="day" aria-pressed="true">יום ${DAY_NAMES[weekdayOf(ds)]} ${ddmm(ds)}</button><button data-pdfscope="week" aria-pressed="false">כל התקופה (דף לכל יום)</button></div></div>
+    <label class="row" style="gap:6px"><input type="checkbox" id="pdf-people" checked> להוסיף בסוף דף שיבוץ אישי לכל לוחם</label>
+    <label class="row" style="gap:6px"><input type="checkbox" id="pdf-gray"> מותאם למדפסת שחור-לבן</label>
+    <p class="muted" style="font-size:.82rem;margin:0">ייפתח חלון הדפסה. ביעד ההדפסה בחרו <b>"שמירה כ-PDF"</b>. באייפון: בחלון ההדפסה לוחצים על כפתור השיתוף ובוחרים "שמירה בקבצים" או שולחים ישר לוואטסאפ.</p>
+  </div>
+  <footer><span></span><div class="row"><button class="btn" data-close>ביטול</button><button class="btn primary" data-act="pdfGo">הפקת PDF</button></div></footer>`);
+  $('#modal').dataset.pdfscope = 'day';
+}
+function pdfHtml(opt) {
+  const data = snapshotData(), P = period(S.cfg);
+  const days = opt.scope === 'day' ? [data.days[Math.max(0, P.days.indexOf(S.day))]] : data.days;
+  const nm = n => n === 'חסר' ? '<span class="miss">חסר</span>' : `<bdi>${esc(n)}</bdi>`;
+  const names = arr => arr && arr.length ? arr.map(nm).join('<span class="sep">, </span>') : '<span class="dim">—</span>';
+  const t = x => `<span class="t">${esc(x)}</span>`;
+  const updated = S.week && S.week.updatedAt ? ` · עודכן ${new Date(S.week.updatedAt).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : (S.week ? '' : ' · טיוטה שלא פורסמה');
+  const made = new Date().toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const head = (title, sub) => `<header class="ph"><div><div class="kick">לוח שיבוץ פלוגתי</div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div><div class="meta">תקופה: ${esc(data.range)}<br>הופק ${esc(made)}${esc(updated)}</div></header>`;
+  const foot = `<footer class="pf"><span>מסמך פנימי · לא להעביר מחוץ לפלוגה</span><span>השיבוץ המעודכן תמיד באתר</span></footer>`;
+  let html = days.map(d => {
+    const card = (cls, title, time, body) => `<div class="card ${cls}"><div class="ct"><b>${title}</b>${time ? `<span>${time}</span>` : ''}</div><div class="cb">${body}</div></div>`;
+    const cards = [
+      card('sb', `כיתת כוננות · ${esc(d.sb.pl)}`, esc(d.sb.time), names(d.sb.names)),
+      card('cv', `שיירות · ${esc(d.cv.pl)}`, t(d.cv.time), names(d.cv.names)),
+      card('kt', 'תורנות מטבח', '', names(d.kitchen)),
+      ...d.events.map(ev => card('ev', esc(ev.name), t(ev.time), names(ev.names))),
+      d.rows.some(r => r.ham) ? '' : card('hm', 'חמ"ל', '', d.hamal.map(h => `<div class="hr">${t(h.time)} ${nm(h.name)}</div>`).join('') || '<span class="dim">—</span>'),
+      d.absent.length ? card('off', `ביציאה (${d.absent.length})`, '', names(d.absent)) : '',
+      d.plAway.length ? card('off', 'לא במוצב', '', d.plAway.map(x => `<bdi>${esc(x)}</bdi>`).join(', ')) : '',
+    ].join('');
+    const hasHam = d.rows.some(r => r.ham);
+    const grid = `<table class="grid"><thead><tr><th class="tc">שעות</th>${data.posts.map(p => `<th>${esc(p)}</th>`).join('')}${hasHam ? '<th class="hmc">חמ"ל</th>' : ''}</tr></thead><tbody>${d.rows.map(r => `<tr class="${r.night ? 'night' : ''}"><td class="tc">${t(r.time)}</td>${r.cells.map(c => c ? `<td>${c.map(nm).join('<span class="sep"> · </span>')}</td>` : '<td class="na">—</td>').join('')}${!hasHam ? '' : !r.ham ? '<td class="na"></td>' : r.ham.first ? `<td class="hmc" rowspan="${r.ham.span}">${nm(r.ham.name)}<div class="hmt">${t(r.ham.time)}</div></td>` : ''}</tr>`).join('')}</tbody></table>`;
+    return `<section class="pg">${head(`יום ${esc(d.name)} <span class="t">${esc(d.date)}</span>`, '')}<div class="cards">${cards}</div>${grid}${foot}</section>`;
+  }).join('');
+  if (opt.people) {
+    const keep = new Set(days.map(d => `${d.name} ${d.date}`));
+    const ppl = data.people.map(p => Object.assign({}, p, { items: p.items.filter(it => keep.has(it.day)) }));
+    const box = p => `<div class="pc"><div class="pn"><b><bdi>${esc(p.name)}</bdi></b><span>${esc(p.pl)}${p.cmdr ? ' · מפקד' : ''}</span></div>${p.items.length ? `<table>${p.items.map((it, i) => `<tr${i && p.items[i - 1].day !== it.day ? ' class="nd"' : ''}>${i && p.items[i - 1].day === it.day ? '<td></td>' : `<td class="pd">${esc(it.day)}</td>`}<td class="ptm">${/[֐-׿]/.test(it.time) ? esc(it.time) : t(it.time)}</td><td>${esc(it.what)}</td></tr>`).join('')}</table>` : '<div class="dim">ללא משימות</div>'}</div>`;
+    html += `<section class="pg people">${head('שיבוץ אישי', opt.scope === 'day' ? `יום ${esc(days[0].name)} ${esc(days[0].date)}` : 'כל התקופה')}<div class="pgrid">${ppl.map(box).join('')}</div>${foot}</section>`;
+  }
+  return html;
+}
+const PRINT_CSS = `
+#print-root { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 9mm 9mm 11mm; @bottom-left { content: "עמוד " counter(page) " מתוך " counter(pages); font: 8pt 'IBM Plex Sans Hebrew', sans-serif; color: #5C6455; } }
+  html, body { background: #fff !important; }
+  body > *:not(#print-root) { display: none !important; }
+  #print-root { display: block; direction: rtl; color: #141A12; font: 10pt/1.35 'IBM Plex Sans Hebrew', 'Segoe UI', Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    --ac: #46602A; --line: #C9CFC0; --soft: #F2F4EE; --night: #E6EAF3; --miss: #B3261E;
+    --sb: #1F4E8C; --sb-bg: #E7EEF8; --cv: #4B3A8F; --cv-bg: #EEEBF8; --kt: #8A4A12; --kt-bg: #F9EEE3; --hm: #6E2E6A; --hm-bg: #F6EAF4; --ev: #0F6B6B; --ev-bg: #E3F2F0; --off: #5C6455; --off-bg: #F0F1EC; }
+  #print-root.gray { --ac: #222; --soft: #F3F3F3; --night: #E9E9E9; --miss: #000; --sb: #222; --sb-bg: #fff; --cv: #222; --cv-bg: #fff; --kt: #222; --kt-bg: #fff; --hm: #222; --hm-bg: #fff; --ev: #222; --ev-bg: #fff; --off: #444; --off-bg: #fff; }
+  #print-root .pg { break-after: page; display: flex; flex-direction: column; gap: 3.5mm; }
+  #print-root .pg:last-child { break-after: auto; }
+  #print-root .ph { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; border-bottom: 2.2pt solid var(--ac); padding-bottom: 2mm; }
+  #print-root .kick { font-size: 8.5pt; font-weight: 600; color: var(--ac); letter-spacing: .02em; }
+  #print-root h1 { font: 400 19pt/1.1 'Secular One', 'IBM Plex Sans Hebrew', sans-serif; margin: 0; }
+  #print-root .sub { font-size: 9.5pt; color: #4A5244; }
+  #print-root .meta { font-size: 8pt; color: #5C6455; text-align: end; }
+  #print-root .t { direction: ltr; unicode-bidi: isolate; font-family: 'IBM Plex Mono', 'IBM Plex Sans Hebrew', monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #print-root bdi { unicode-bidi: isolate; }
+  #print-root .miss { color: var(--miss); font-weight: 700; }
+  #print-root .dim { color: #8A9182; }
+  #print-root .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(52mm, 1fr)); gap: 2.2mm; }
+  #print-root .card { border: .7pt solid var(--line); border-top: 2.4pt solid var(--c, var(--ac)); border-radius: 1.6mm; padding: 1.6mm 2.2mm; background: var(--bg, #fff); break-inside: avoid; }
+  #print-root .card.sb { --c: var(--sb); --bg: var(--sb-bg); } #print-root .card.cv { --c: var(--cv); --bg: var(--cv-bg); } #print-root .card.kt { --c: var(--kt); --bg: var(--kt-bg); }
+  #print-root .card.hm { --c: var(--hm); --bg: var(--hm-bg); } #print-root .card.ev { --c: var(--ev); --bg: var(--ev-bg); } #print-root .card.off { --c: var(--off); --bg: var(--off-bg); border-top-style: dashed; }
+  #print-root .ct { display: flex; justify-content: space-between; gap: 2mm; align-items: baseline; color: var(--c); font-size: 9pt; }
+  #print-root .ct span { font-size: 7.8pt; color: #4A5244; white-space: nowrap; }
+  #print-root .cb { font-size: 9.5pt; margin-top: .6mm; }
+  #print-root .hr { display: flex; gap: 2mm; } #print-root .hr .t { font-size: 8pt; color: #4A5244; }
+  #print-root table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  #print-root .grid th { background: var(--ac); color: #fff; font-weight: 600; font-size: 9pt; padding: 1.4mm 1.6mm; text-align: start; border: .7pt solid var(--ac); }
+  #print-root .grid td { border: .7pt solid var(--line); padding: 1mm 1.6mm; font-size: 9.5pt; line-height: 1.25; vertical-align: middle; }
+  #print-root .sep { color: #9AA190; }
+  #print-root .grid th.tc, #print-root .grid td.tc { width: 25mm; }
+  #print-root .grid td.tc { font-weight: 600; background: var(--soft); }
+  #print-root .grid tr.night td { background: var(--night); }
+  #print-root .grid td.na { color: #A3A99B; text-align: center; background: repeating-linear-gradient(135deg, transparent 0 3px, #EEF0EA 3px 4px); }
+  #print-root .grid td.hmc { background: var(--hm-bg); color: var(--hm); font-weight: 600; }
+  #print-root .hmt { font-size: 7.5pt; color: #5C6455; font-weight: 400; }
+  #print-root.gray .grid th { background: #fff; color: #000; border-bottom: 1.6pt solid #000; }
+  #print-root .grid tr { break-inside: avoid; }
+  #print-root .pf { display: flex; justify-content: space-between; font-size: 7.5pt; color: #6B7363; border-top: .6pt solid var(--line); padding-top: 1.4mm; margin-top: auto; }
+  #print-root .pgrid { columns: 3; column-gap: 4mm; }
+  #print-root .pc { break-inside: avoid; border: .7pt solid var(--line); border-radius: 1.6mm; padding: 1.6mm 2.2mm; margin-bottom: 3mm; }
+  #print-root .pn { display: flex; justify-content: space-between; gap: 2mm; border-bottom: .7pt solid var(--line); padding-bottom: .8mm; margin-bottom: .8mm; }
+  #print-root .pn span { font-size: 7.8pt; color: #5C6455; }
+  #print-root .pc table { border-collapse: collapse; font-size: 8.6pt; }
+  #print-root .pc tr.nd td { border-top: .5pt dotted var(--line); }
+  #print-root .pc td { padding: .35mm 0; vertical-align: top; } #print-root .pc td + td { padding-inline-start: 2mm; }
+  #print-root .pd { font-weight: 600; white-space: nowrap; } #print-root .ptm { white-space: nowrap; }
+}`;
+async function exportPdf(opt) {
+  closeDialog();
+  let root = document.getElementById('print-root');
+  if (!root) { root = document.createElement('div'); root.id = 'print-root'; document.body.appendChild(root); }
+  if (!document.getElementById('print-style')) { const st = document.createElement('style'); st.id = 'print-style'; st.textContent = PRINT_CSS; document.head.appendChild(st); }
+  root.className = opt.gray ? 'gray' : '';
+  root.innerHTML = pdfHtml(opt);
+  const P = period(S.cfg), first = addDays(S.ws, opt.scope === 'day' ? S.day : P.days[0]);
+  const oldTitle = document.title;
+  document.title = opt.scope === 'day' ? `שיבוץ ${DAY_NAMES[weekdayOf(first)]} ${ddmm(first)}` : `שיבוץ ${ddmm(first)}–${ddmm(addDays(S.ws, P.days[P.days.length - 1]))}`; // default PDF file name
+  try { await document.fonts.ready; } catch (e) {}
+  const done = () => { document.title = oldTitle; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
 }
 
 // ---------- actions ----------
@@ -1695,14 +1816,14 @@ function dayText(d) {
   const doc = currentDoc(), v = analysis(), R = S.cfg.rules, T = S.cfg.tasks; const D = doc.days[d]; const ds = addDays(doc.ws, d);
   const names = arr => arr.map(id => id ? pname(id) : 'חסר').join(', ');
   const lines = [`שיבוץ יום ${DAY_NAMES[weekdayOf(ds)]} ${ddmm(ds)}`, `כוננות (${pl(D.sbPl)}): ${names(D.sb)}`, `שיירות (${pl(D.cvPl)}): ${names(D.cv)}`, `מטבח: ${names(D.kitchen)}`];
-  weekEvents(S.cfg, S.ws).filter(ev => Math.floor((ev.s - R.changeover) / 24) === d).forEach(ev => lines.push(`${ev.name} ${h2t(ev.from)}-${h2t(ev.to)}: ${names((doc.events || {})[ev.id] || [])}`));
+  weekEvents(S.cfg, S.ws).filter(ev => Math.floor((ev.s - R.changeover) / 24) === d).forEach(ev => lines.push(`${ev.name} ${trange(ev.from, ev.to, '-')}: ${names((doc.events || {})[ev.id] || [])}`));
   const ham = v.geo.hamal.filter(h => h.s < 24 * d + R.changeover + 24 && h.e > 24 * d + R.changeover);
-  lines.push('חמ"ל: ' + ham.map(h => `${h2t(h.s)} ${doc.cells[h.key] ? pname(doc.cells[h.key]) : 'חסר'}`).join(' | '), '');
+  lines.push('חמ"ל: ' + ham.map(h => `\u2066${h2t(h.s)}\u2069 ${doc.cells[h.key] ? pname(doc.cells[h.key]) : 'חסר'}`).join(' | '), '');
   const P = period(S.cfg); const dA = Math.max(24 * d + R.changeover, P.P0), dB = Math.min(24 * d + R.changeover + 24, P.P1);
   for (let j = Math.floor((dA - R.changeover) / R.shift); R.changeover + j * R.shift < dB - 1e-9; j++) {
     const s = Math.max(R.changeover + j * R.shift, dA), e = Math.min(R.changeover + (j + 1) * R.shift, dB); if (e - s < 1e-9) continue;
     const parts = S.cfg.posts.map(p => { const cs = v.geo.cells.filter(c => c.j === j && c.post === p.id); return cs.length ? `${p.name}: ${cs.map(c => doc.cells[c.key] ? pname(doc.cells[c.key]) : 'חסר').join(', ')}` : null; }).filter(Boolean);
-    lines.push(`${h2t(s)}-${h2t(e)} | ${parts.join(' | ')}`);
+    lines.push(`${trange(s, e, '-')} | ${parts.join(' | ')}`);
   }
   return lines.join('\n');
 }
@@ -1774,6 +1895,8 @@ document.addEventListener('click', async e => {
   else if (act === 'regen') regen();
   else if (act === 'unlockAll') { const locks = {}; Object.keys(S.week.locks || {}).forEach(k => locks[k] = false); patchWeek({ locks }, doc => { doc.locks = locks; }); toast('כל הנעילות שוחררו'); }
   else if (act === 'copyDay') copyText(dayText(S.day));
+  else if (act === 'pdf') openPdfDialog();
+  else if (act === 'pdfGo') { const md = $('#modal'); exportPdf({ scope: md.dataset.pdfscope || 'day', people: $('#pdf-people').checked, gray: $('#pdf-gray').checked }); }
   else if (act === 'snapshot') {
     try { await S.downloads.save({ filename: `shibutz-${S.ws}.html`, data: snapshotHtml() }); toast('הקובץ מוכן לשליחה'); } catch (er) { if (er && er.code !== 'declined') toast('ההורדה לא הצליחה'); }
   }
